@@ -21,15 +21,22 @@
 #include <iostream>
 
 
-namepspace Morgen {
+namespace Morgen {
 
-namepspace util {
+namespace util {
 
 
 /*****************************************************************
- * Print a value
+ * Print a value(any datatype)
  *****************************************************************/
 
+template<typename T> 
+void PrintValue(T val) {
+	val.Print();
+}
+
+
+// override it when the data is a basic data type
 template<>
 void PrintValue<char>(char val) {
 	printf("%d", val);
@@ -99,9 +106,9 @@ template <typename T>
 void RandomizeArray(T* a, int len) {
     srand(time(0));
     for (int i = 0; i < len; i++) {
-        a[i] = (T) (rand() % 65536);   // return return an integer        
+        a[i] = (T) (rand() % 65536);   // rand() returns an integer
     }
-    
+
 }
 
 
@@ -114,14 +121,15 @@ void RandomizeArray(T* a, int len) {
 template <typename T>
 void PrintArray(T* a, int len)
 {
-    for (int i = 0, i < len; i++) {
+    for (int i = 0; i < len; i++) {
         PrintValue<T>(a[i]);
-        printf("\t");
-        if (i % 10 == 0) printf("\n");
-    }                                      
+        printf("  ");
+        if (i % 10 == 9) printf("\n");
+    }
     printf("~~~\n");
-   
+
 }
+
 
 
 /******************************************************************
@@ -131,12 +139,13 @@ void PrintArray(T* a, int len)
 template <typename T>
 int CompareArray(T* first, T* second, int len)
 {
-    for (int i = 0, i < len; i++) {
+    for (int i = 0; i < len; i++) {
         if (first[i] != second[i]) {
-            printf("ERROR: %d\n", i);
+            printf("Difference: %d\n", i);
             PrintValue<T>(first[i]);
-            printf("\n");
+            printf(" != ");
             PrintValue<T>(second[i]);
+            printf("\n");
             return 1;
         }
     }   
@@ -155,13 +164,13 @@ struct GPUTimer {
    	cudaEvent_t start;
 	cudaEvent_t stop;
 
-	GpuTimer()
+	GPUTimer()
 	{
 		cudaEventCreate(&start);
 		cudaEventCreate(&stop);
 	}
 
-	~GpuTimer()
+	~GPUTimer()
 	{
 		cudaEventDestroy(start);
 		cudaEventDestroy(stop);

@@ -18,9 +18,11 @@
 
 #include <argvparser/argvparser.h>
 #include <cstdlib>
+#include <stdio.h>
 #include <iostream>
+#include "../test_utils.h"
 
-
+using namespace Morgen;
 using namespace CommandLineProcessing;
 using namespace std;
 
@@ -29,11 +31,10 @@ using namespace std;
  * Globals
  ********************************************************************************/
 
-int      g_num_stride_log       = 1;     
+int      g_num_strides_log      = 0;     
 int      g_num_elements         = 1024;
 int      g_num_iterations       = 1;
 bool     g_local                = false;
-
 
 
 /**********************************************************************************
@@ -127,13 +128,12 @@ __global__ void GlobalAtomicKernel(
         
         d_out[tid] = temp;
 
-        tid += blockDim.x;
+        tid += gridDim.x * blockDim.x;
     }
 }
 
 
 __global__ void LocalAtomicKernel(
-    int *d_counter,
     int *d_in,
     int *d_out,
     int stride,
@@ -155,23 +155,21 @@ int main(int argc, char** argv)
 
     Init(argc, argv);
 
-    printf("strides(log): %d \n"         
-           "elements: %d     \n"
-           "local: %b        \n",
-           "iterations: %d   \n",
-           g_num_strides_log,
-           g_num_elements,
-           g_local,
-           g_num_iterations);
+
+    cout << "stride(log):\t"   << g_num_strides_log   << "\n"
+         << "elements:\t"      << g_num_elements      << "\n"
+         << "local:\t"         << g_local             << "\n"
+         << "iterations:\t"    << g_num_iterations    << "\n";
+         
 
 
     // host alloc
     int *in = new int[g_num_elements];
     int *out = new int[g_num_elements];
     
-    util::RandomizeArray(in, g_num_elements);
-    util::PrintArray(in, g_num_elements);
-
+    // in is a random array
+    util::RandomizeArray<int>(in, g_num_elements);
+   
 
     // device alloc
     int *d_counter = NULL;   // global memory counter
@@ -209,15 +207,24 @@ int main(int argc, char** argv)
     int tiles = (g_num_elements + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
 
     int num_blocks = (tiles > MAX_NUM_BLOCKS) ?
-        MAX_NUM_CTAS :
+        MAX_NUM_BLOCKS :
         tiles;
     
     int tiles_per_block = tiles / num_blocks;
     int extra_tiles = tiles - (tiles_per_block * num_blocks);
+    int strides = 1 << g_num_strides_log;
+
+
+
+    cout << "tiles:\t"             << tiles             << "\n"
+         << "blocks:\t"            << num_blocks        << "\n"
+         << "tiles_per_block:\t"   << tiles_per_block   << "\n"
+         << "extra_tiles:\t"       << extra_tiles       << "\n"
+         << "strides:\t"           << strides           << "\n";
 
 
     // iteration starts
-    for (int i = 0; i < g_iterations; i++) {
+    for (int i = 0; i < g_num_iterations; i++) {
         
         util::GPUTimer timer;
 
@@ -227,14 +234,15 @@ int main(int argc, char** argv)
             LocalAtomicKernel <<< num_blocks, THREADS_PER_BLOCK >>>(
                 d_in,
                 d_out,
-                stride,
+                strides,
                 tiles_per_block,
                 extra_tiles);
         } else {
             GlobalAtomicKernel <<< num_blocks, THREADS_PER_BLOCK >>>(
+                d_counter,
                 d_in,
                 d_out,
-                stride,
+                strides,
                 tiles_per_block,
                 extra_tiles);
         }        
@@ -242,9 +250,11 @@ int main(int argc, char** argv)
         timer.Stop();
         
         float millis = timer.ElapsedTime();
-        float atomics = float(g_elements) / g_num_strides;
+        float atomics = float(g_num_elements) / strides;
         unsigned long long bytes = g_num_elements * sizeof(int) * 2;
 
+        printf("%.3f ms elapesed\n",
+               millis);
         printf("%.5f 10^9 atomics/sec \n",
                atomics / millis / 1000.0 / 1000.0);
         printf("%.5f 10^9 bytes/sec   \n",
@@ -256,10 +266,13 @@ int main(int argc, char** argv)
 
     // copy data_out to device
     cudaMemcpy(out, d_out, sizeof(int) * g_num_elements,
-               cudaMemcpyHostToDevice);
+               cudaMemcpyDeviceToHost);
 
-    util::PrintArray(d, g_num_elements);
 
+    // validate
+    //util::PrintArray(in, g_num_elements);
+    //util::PrintArray(out, g_num_elements);
+    util::CompareArray<int>(in ,out, g_num_elements);
 
     // cleaning
     if (d_counter) cudaFree(d_counter);

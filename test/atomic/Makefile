@@ -1,13 +1,13 @@
 rm=/bin/rm -f
-CC= g++ -Wall
-PROGNAME= atomictest
+NVCC=nvcc
+PROGNAME= test
 INCLUDES= -I./../../lib
 LIBS= ./../../lib/argvparser/argvparser.o
-
+SM=-arch sm_20
 
 CFLAGS= -g
 
-SRCS = test.cpp 
+SRCS = test.cu
 
 OBJS = test.o
 
@@ -16,12 +16,12 @@ all: $(PROGNAME)
 
 
 $(PROGNAME): $(OBJS)
-	$(CC) -o $(PROGNAME) $(OBJS) $(LIBS)
+	$(NVCC) -o $(PROGNAME) $(OBJS) $(LIBS)
 	$(rm) $(OBJS)
 
 
-test.o: test.cpp
-	$(CC) $(CFLAGS) -c test.cpp $(INCLUDES)
+test.o: test.cu
+	$(NVCC) $(CFLAGS) -c test.cu $(INCLUDES) $(SM)
 
 
 

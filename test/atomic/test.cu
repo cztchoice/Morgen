@@ -120,12 +120,13 @@ __global__ void GlobalAtomicKernel(
 
     for (int i = 0; i < tiles_per_block; i++) {
         temp = d_in[tid];
-        
-        if (tid % stride == 0) {
-            // atomic opertion with stride
-            atomicAdd(d_counter, 1);
-        }
-        
+              
+        /*
+         * each  thead perform an atomic opertion to a strided
+         * position of counter array        
+         */
+        atomicAdd(d_counter + tid % stride, 1);
+                
         d_out[tid] = temp;
 
         tid += gridDim.x * blockDim.x;
@@ -140,6 +141,32 @@ __global__ void LocalAtomicKernel(
     int tiles_per_block,
     int extra_tiles) 
 {
+ 
+    
+    // each block has a critical variable
+    __shared__ int s_counter[8196];
+
+    int tid = threadIdx.x + blockIdx.x * blockDim.x;
+    int temp;
+    
+    /*
+     * extra_tiles == 3 means only 3 blocks of threads need to
+     * process the extra tiles. So increase the tiles
+     */
+    if (blockIdx.x < extra_tiles) {
+        tiles_per_block++;
+    } 
+
+
+    for (int i = 0; i < tiles_per_block; i++) {
+        temp = d_in[tid];              
+
+        atomicAdd( & s_counter[threadIdx.x % stride], 1);
+                
+        d_out[tid] = temp;
+
+        tid += gridDim.x * blockDim.x;
+    }
 
 
 }
@@ -156,27 +183,30 @@ int main(int argc, char** argv)
     Init(argc, argv);
 
 
-    cout << "stride(log):\t"   << g_num_strides_log   << "\n"
-         << "elements:\t"      << g_num_elements      << "\n"
-         << "local:\t"         << g_local             << "\n"
-         << "iterations:\t"    << g_num_iterations    << "\n";
+    cout << "stride(log):\t elements:\t local:\t iterations:\t \n"    
+         << g_num_strides_log   << "\t"
+         << g_num_elements      << "\t"
+         << g_local             << "\t"
+         << g_num_iterations    << "\n";
          
 
+    const int COUNTER_SIZE = 20000;
 
     // host alloc
     int *in = new int[g_num_elements];
     int *out = new int[g_num_elements];
+    int *counter = new int[COUNTER_SIZE]();  // all 0
     
     // in is a random array
     util::RandomizeArray<int>(in, g_num_elements);
    
 
     // device alloc
-    int *d_counter = NULL;   // global memory counter
+    int *d_counter = NULL;   // global memory counter array
     int *d_in = NULL;
     int *d_out = NULL;
 
-    cudaMalloc((void**) &d_counter, sizeof(int) * 1);
+    cudaMalloc((void**) &d_counter, sizeof(int) * COUNTER_SIZE);   
     cudaMalloc((void**) &d_in, sizeof(int) * g_num_elements);
     cudaMalloc((void**) &d_out, sizeof(int) * g_num_elements);
 
@@ -189,7 +219,8 @@ int main(int argc, char** argv)
     // copy data_in to device
     cudaMemcpy(d_in, in, sizeof(int) * g_num_elements,
                cudaMemcpyHostToDevice);
-
+    cudaMemcpy(d_counter, counter, sizeof(int) * COUNTER_SIZE,
+               cudaMemcpyHostToDevice);
 
     /*
      * NOTE:
@@ -216,11 +247,12 @@ int main(int argc, char** argv)
 
 
 
-    cout << "tiles:\t"             << tiles             << "\n"
-         << "blocks:\t"            << num_blocks        << "\n"
-         << "tiles_per_block:\t"   << tiles_per_block   << "\n"
-         << "extra_tiles:\t"       << extra_tiles       << "\n"
-         << "strides:\t"           << strides           << "\n";
+    cout << "tiles\t blocks\t  tiles/block\t extra_tiles\t stride:\n"             
+         << tiles             << "\t"
+         << num_blocks        << "\t"
+         << tiles_per_block   << "\t"
+         << extra_tiles       << "\t"
+         << strides           << "\n";
 
 
     // iteration starts
@@ -268,11 +300,17 @@ int main(int argc, char** argv)
     cudaMemcpy(out, d_out, sizeof(int) * g_num_elements,
                cudaMemcpyDeviceToHost);
 
+    cudaMemcpy(counter, d_counter, sizeof(int) * COUNTER_SIZE,
+               cudaMemcpyDeviceToHost);
+
 
     // validate
     //util::PrintArray(in, g_num_elements);
     //util::PrintArray(out, g_num_elements);
+    //util::PrintArray<int>(counter, COUNTER_SIZE);
     util::CompareArray<int>(in ,out, g_num_elements);
+
+
 
     // cleaning
     if (d_counter) cudaFree(d_counter);

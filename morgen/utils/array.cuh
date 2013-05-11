@@ -26,10 +26,10 @@ namespace util {
  * Randomize an array
  */
 template <typename T>
-void RandomizeArray(T* a, int len) {
+void RandomizeArray(T* a, int len, T max = 65536) {
     srand(time(0));
     for (int i = 0; i < len; i++) {
-        a[i] = (T) (rand() % 65536);   // rand() returns an integer
+        a[i] = (T) (rand() % max);   // rand() returns an integer
     }
 
 }

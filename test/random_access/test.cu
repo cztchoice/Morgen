@@ -1,5 +1,5 @@
 /*
- *   A test for the performance of atomic operation on GPU
+ *   Random Access Test
  *
  *   Copyright (C) 2013 by
  *   Cheng Yichao        onesuperclark@gmail.com
@@ -20,7 +20,10 @@
 #include <cstdlib>
 #include <stdio.h>
 #include <iostream>
-#include "../test_utils.h"
+#include <morgen/utils/handle_error.cuh>
+#include <morgen/utils/print_value.cuh>
+#include <morgen/utils/array.cuh>
+#include <morgen/utils/timer.cuh>
 
 using namespace Morgen;
 using namespace CommandLineProcessing;
@@ -98,7 +101,6 @@ void Init(int argc, char** argv) {
  ************************************************************************************/
 
 __global__ void GlobalAtomicKernel(
-    int *d_counter,
     int *d_in,
     int *d_out,
     int stride,
@@ -120,15 +122,8 @@ __global__ void GlobalAtomicKernel(
 
     for (int i = 0; i < tiles_per_block; i++) {
         temp = d_in[tid];
-              
-        /*
-         * each  thead perform an atomic opertion to a strided
-         * position of counter array        
-         */
-        atomicAdd(d_counter + tid % stride, 1);
-                
-        d_out[tid] = temp;
-
+                             
+        d_out[temp] = 6;
         tid += gridDim.x * blockDim.x;
     }
 }
@@ -198,29 +193,34 @@ int main(int argc, char** argv)
     int *counter = new int[COUNTER_SIZE]();  // all 0
     
     // in is a random array
-    util::RandomizeArray<int>(in, g_num_elements);
+    util::RandomizeArray<int>(in, g_num_elements, g_num_elements);
    
 
     // device alloc
-    int *d_counter = NULL;   // global memory counter array
     int *d_in = NULL;
     int *d_out = NULL;
 
-    cudaMalloc((void**) &d_counter, sizeof(int) * COUNTER_SIZE);   
-    cudaMalloc((void**) &d_in, sizeof(int) * g_num_elements);
-    cudaMalloc((void**) &d_out, sizeof(int) * g_num_elements);
+    Morgen::util::HandleError(cudaMalloc((void**) &d_in, sizeof(int) * g_num_elements),
+                              "cudaMalloc d_in fail",
+                              __FILE__,
+                              __LINE__);
+    Morgen::util::HandleError(cudaMalloc((void**) &d_out, sizeof(int) * g_num_elements),
+                              "cudaMalloc d_out fail",
+                              __FILE__,
+                              __LINE__);
 
-    if (NULL == d_counter || NULL == d_in || NULL == d_out) {
+
+    if (NULL == d_in || NULL == d_out) {
         printf("cudamalloc fail!\n");
         exit(1);
     }
 
-
     // copy data_in to device
-    cudaMemcpy(d_in, in, sizeof(int) * g_num_elements,
-               cudaMemcpyHostToDevice);
-    cudaMemcpy(d_counter, counter, sizeof(int) * COUNTER_SIZE,
-               cudaMemcpyHostToDevice);
+    Morgen::util::HandleError(cudaMemcpy(d_in, in, sizeof(int) * g_num_elements,
+                                         cudaMemcpyHostToDevice),
+                              "cudaMemcpy in to device fail",
+                              __FILE__,
+                              __LINE__);
 
     /*
      * NOTE:
@@ -271,7 +271,6 @@ int main(int argc, char** argv)
                 extra_tiles);
         } else {
             GlobalAtomicKernel <<< num_blocks, THREADS_PER_BLOCK >>>(
-                d_counter,
                 d_in,
                 d_out,
                 strides,
@@ -282,43 +281,32 @@ int main(int argc, char** argv)
         timer.Stop();
         
         float millis = timer.ElapsedTime();
-        float atomics = float(g_num_elements) / strides;
         unsigned long long bytes = g_num_elements * sizeof(int) * 2;
 
         printf("%.3f ms elapesed\n",
                millis);
-        printf("%.5f 10^9 atomics/sec \n",
-               atomics / millis / 1000.0 / 1000.0);
         printf("%.5f 10^9 bytes/sec   \n",
                float(bytes) / millis / 1000.0 / 1000.0);
-
     }
     
-
-
     // copy data_out to device
-    cudaMemcpy(out, d_out, sizeof(int) * g_num_elements,
-               cudaMemcpyDeviceToHost);
-
-    cudaMemcpy(counter, d_counter, sizeof(int) * COUNTER_SIZE,
-               cudaMemcpyDeviceToHost);
-
+    Morgen::util::HandleError(cudaMemcpy(out, d_out, sizeof(int) * g_num_elements,
+                                         cudaMemcpyDeviceToHost),
+                              "cudaMemcpy out to device fail",
+                              __FILE__,
+                              __LINE__);
 
     // validate
-    //util::PrintArray(in, g_num_elements);
-    //util::PrintArray(out, g_num_elements);
-    //util::PrintArray<int>(counter, COUNTER_SIZE);
-    util::CompareArray<int>(in ,out, g_num_elements);
-
+    Morgen::util::PrintArray(in, g_num_elements);
+    Morgen::util::PrintArray(out, g_num_elements);
 
 
     // cleaning
-    if (d_counter) cudaFree(d_counter);
     if (d_in) cudaFree(d_in);
-    if (d_out) cudaFree(d_out);
-    
+    if (d_out) cudaFree(d_out);    
     delete[] in;
     delete[] out;
+
 
     return 0;
 }

@@ -16,8 +16,10 @@
  */
 
 
-#include <morgen/util/handle_error.cuh>
-#include <morgen/util/print_value.cuh>
+#include <morgen/utils/handle_error.cuh>
+#include <morgen/utils/print_value.cuh>
+
+
 
 
 namespace Morgen {
@@ -37,53 +39,44 @@ struct CsrGraph
     bool         pinned;   
 
     /*
-     * constructor
+     * constructor(default not pinned)     
      */
-    CsrGraph() : node_num(0),
-                 edge_num(0),
-                 row(NULL),
-                 column(NULL),
-                 pinned(false) {}
+    CsrGraph(bool pinned = false) :
+            node_num(0),
+            edge_num(0),
+            row(NULL),
+            column(NULL),
+            pinned(pinned) {}
 
-
-    /**
-     * Allocate on the normal memory
-     */
-    void CPUInit(nodes_num, edge_num) {
-        this->node_num = node_num;
-        this->edge_num = edge_num;
-        row     = (SizeT*) malloc(sizeof(SizeT) * num_nodes);
-        column  = (VertexId*) malloc(sizeof(VertexId) * edge_num); 
-    }
-
-
+    
     /** 
-     * Allocate on the pinned memory
+     * if pinned is true, allocate on the pinned memory
+     * else allocate on the normal memory
      */
-    void PinnedInit(nodes_num, edge_num) {
-        this->node_num = node_num;
-        this->edge_num = edge_num;
+    void Init(SizeT nodes, SizeT edges) {
 
-        int mapped = cudaHostAllocMapped;
-        
-        if (Morgen::util::HandleError(
-                 cudaHostAlloc((void**)&row,
-                               sizeof(SizeT) * (node_num + 1),
-                               mapped),
-                 "CsrGraph cudaHostAlloc row failed",
-                 __FILE__,
-                 __LINE___)) exit(1);
-        
-        if (Morgen::util::HandleError(
-                 cudaHostAlloc((void**)&column,
-                               sizeof(VertexId) * edges,
-                               mapped),
-                 "CsrGraph cudaHostAlloc column failed",
-                 __FILE__,
-                 __LINE___)) exit(1);  
+        node_num = nodes;
+        edge_num = edges;
 
-        pinned = true;
+        if (pinned) {
+            int mapped = cudaHostAllocMapped;        
+            if (Morgen::util::HandleError(cudaHostAlloc((void**)&row, sizeof(SizeT) * (node_num + 1), mapped),
+                                          "CsrGraph cudaHostAlloc row failed",
+                                          __FILE__,
+                                          __LINE__)) exit(1);
+        
+            if (Morgen::util::HandleError(cudaHostAlloc((void**)&column, sizeof(VertexId) * edge_num, mapped),
+                                          "CsrGraph cudaHostAlloc column failed",
+                                          __FILE__,
+                                          __LINE__)) exit(1);  
+
+        } else {
+            row      = (SizeT*) malloc(sizeof(SizeT) * (node_num + 1));
+            column   = (VertexId*) malloc(sizeof(VertexId) * edge_num); 
+        }
     }
+
+
 
 
     /**
@@ -91,32 +84,40 @@ struct CsrGraph
      */    
     void Display() {
         printf("Displaying Graph:\n");
-        for (VetexId node = 0; node < node_num; node++) {
-            PrintValue(node);
+        
+        if (pinned)
+            printf("Allocated in pinned memory\n");
+        else 
+            printf("Allocated in ordinary memory\n");
+        
+
+        for (SizeT node = 0; node < node_num; node++) {
+            Morgen::util::PrintValue(node);
             printf(" ->");
-            for (Size edge = row[node]; edge < row[node+1]; edge++) {
+            for (SizeT edge = row[node]; edge < row[node+1]; edge++) {
                 printf("\t");
-                PrintValue(column[edge]);                
+                Morgen::util::PrintValue(column[edge]);                
             }
             printf("\n");
         }
     }
+
 
     /**
      * Display out-degree number of each node in the cosole
      * count the number in log style
      */
     void DisplayOutDegree() {
-        printf("Displaying Outdegree:\n");
+        printf("Displaying out degree:\n");
         
         int log_counts[32];
         for (int i = 0; i < 32; i++) {
             log_counts[i] = 0;
         }
-
+        
         int max_times = -1;
 
-        for (VetexId node = 0; node < node_num; node++) {
+        for (SizeT node = 0; node < node_num; node++) {
 
             SizeT degree = row[node + 1] - row[node];
             
@@ -127,23 +128,23 @@ struct CsrGraph
                 times++;                
             }
 
-			if (times > max_times) {
-				max_times = times;
-			}
+            if (times > max_times) {
+                max_times = times;
+            }
 
             log_counts[times]++;
         }
         
-		for (int i = -1; i < max_log_length + 1; i++) {
-			printf("\nDegree 2^%i: %d (%.2f%%)\n",
+        for (int i = -1; i < max_times + 1; i++) {
+            printf("Degree 2^%i: %d (%.2f%%)\n",
                    i,
                    log_counts[i + 1],
-                   (float) log_counts[i + 1] * 100.0 / this->node_num);
-		}
+                   (float) log_counts[i + 1] * 100.0 / node_num);
+        }
 
         printf("%lld vertices, %lld edges\n",
-               (long long) this->node_num,
-               (long long) this->node_num);        
+               (long long) node_num,
+               (long long) edge_num);        
 
     }
 
@@ -156,11 +157,11 @@ struct CsrGraph
             Morgen::util::HandleError(cudaFreeHost(row),
                                       "CsrGraph cudaFreeHost row failed",
                                       __FILE__,
-                                      __LINE___);
+                                      __LINE__);
             Morgen::util::HandleError(cudaFreeHost(column),
                                       "CsrGraph cudaFreeHost column failed",
                                       __FILE__,
-                                      __LINE___);                       
+                                      __LINE__);                       
         } else {
             free(row);
             free(column);

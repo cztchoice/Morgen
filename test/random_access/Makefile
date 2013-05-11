@@ -1,15 +1,15 @@
 rm=/bin/rm -f
 NVCC=nvcc
-PROGNAME= degree_histogram
-INCLUDES= -I./../../lib -I./../..
+PROGNAME= test
+INCLUDES= -I./../../lib  -I./../..
 LIBS= ./../../lib/argvparser/argvparser.o
 SM=-arch sm_20
 
 CFLAGS= -g
 
-SRCS = $(PROGNAME).cu
+SRCS = test.cu
 
-OBJS = $(PROGNAME).o
+OBJS = test.o
 
 
 all: $(PROGNAME)
@@ -20,8 +20,8 @@ $(PROGNAME): $(OBJS)
 	$(rm) $(OBJS)
 
 
-$(OBJS): $(SRCS)
-	$(NVCC) $(CFLAGS) -c $(SRCS) $(INCLUDES) $(SM)
+test.o: test.cu
+	$(NVCC) $(CFLAGS) -c test.cu $(INCLUDES) $(SM)
 
 
 

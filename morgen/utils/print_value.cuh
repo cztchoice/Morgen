@@ -15,10 +15,10 @@
  *   GNU General Public License for more details.
  */
 
+#include<stdio.h>
 
 
 namespace Morgen {
-
 namespace util {
 
 

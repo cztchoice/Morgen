@@ -18,10 +18,10 @@
 
 namespace Morgen {
 
-    namespace util {
+namespace util {
 
         
 
-    }
+}
 
 }
